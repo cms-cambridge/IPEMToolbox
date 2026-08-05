@@ -1,31 +1,17 @@
 #!/usr/bin/ruby
-require 'rubygems'
-require 'RedCloth'
+# Historic helper that rendered README.textile via RedCloth.
+# The project README is now Markdown (../README.md); prefer viewing that on GitHub.
+# This script copies the Markdown into Docs/index.html as a plain <pre> fallback.
 
-#read file
 def r(file)
-  file = File.open(file, "r")
-  contents = file.read
-  file.close
-  return contents
-end
-
-#read redcloth file
-def rr(file)
-	RedCloth.new(r(file)).to_html
+  File.read(file)
 end
 
 def render
-	template = r("template.html")
-	docs = rr("../README.textile")
-	html = template.gsub("__content__",docs)
-	File.open("index.html", 'w') {|f| f.write(html) }
+  template = r("template.html")
+  docs = "<pre>#{r('../README.md')}</pre>"
+  html = template.gsub("__content__", docs)
+  File.open("index.html", "w") { |f| f.write(html) }
 end
 
-
-#while(true) do
-  render
-#  sleep 2.1
-#end
-
-
+render
