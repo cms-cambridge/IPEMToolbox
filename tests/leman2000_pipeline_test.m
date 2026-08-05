@@ -18,7 +18,12 @@ end
 snapshotCsv = getenv('IPEM_SNAPSHOT_CSV');
 tol = str2double(getenv('IPEM_CORR_TOL'));
 if isnan(tol) || isempty(tol)
-  tol = 1e-4;  % Octave vs MATLAB; snapshots use 1e-12 against MATLAB binary
+  % Measured Octave-vs-MATLAB agreement on the pyLeman2000 hihat fixture:
+  %   44.1 kHz input (resampled to 22.05 kHz internally): ~2.7e-6
+  %   22.05 kHz input (no input resampling):              ~5e-11
+  % The remaining gap comes from firls differences in resample, not from the
+  % auditory model itself.
+  tol = 1e-5;
 end
 
 [inDir, inKey, inExt] = fileparts(wavPath);

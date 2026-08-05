@@ -1,0 +1,103 @@
+function [y, h] = resample(x, p, q, N, bta)
+% MATLAB-compatible resample for GNU Octave.
+%
+% Octave's signal package designs its anti-aliasing filter from the empirical
+% formula in Oppenheim & Schafer (Eq. 7.63), giving a different filter (291
+% taps for 1:4) than MATLAB, which uses firls + kaiser(N=10,beta=5) (85 taps).
+% For the IPEM pipeline that difference changes decimated ANI values by ~3e-2,
+% so this shim reproduces MATLAB's design to keep results comparable with
+% historic MATLAB output.
+%
+% Parameters
+% ----------
+% x : array
+%     Input signal. Vectors are processed as a single channel; matrices are
+%     processed column-wise.
+% p, q : int
+%     Resampling ratio p/q.
+% N : int, optional
+%     Half-length of the filter in output samples (default 10). If N is a
+%     vector it is used directly as the filter coefficients.
+% bta : float, optional
+%     Kaiser window beta (default 5).
+%
+% Returns
+% -------
+% y : array
+%     Resampled signal, same orientation as x.
+% h : array
+%     Filter coefficients used.
+
+  if (nargin < 3)
+    print_usage();
+  end
+  if (nargin < 4) || isempty(N)
+    N = 10;
+  end
+  if (nargin < 5) || isempty(bta)
+    bta = 5;
+  end
+
+  [p, q] = rat(double(p) / double(q), 1e-12);
+  p = double(p);
+  q = double(q);
+  if (p <= 0) || (q <= 0)
+    error('resample: p and q must be positive');
+  end
+
+  if (isscalar(N))
+    pqmax = max(p, q);
+    fc = 1 / 2 / pqmax;
+    L = 2 * N * pqmax + 1;
+    hFirls = firls(L - 1, [0, 2 * fc, 2 * fc, 1], [1, 1, 0, 0]);
+    hKaiser = kaiser(L, bta);
+    h = p * (hFirls(:).') .* (hKaiser(:).');
+  else
+    h = N(:).';
+    L = numel(h);
+  end
+
+  Lhalf = (L - 1) / 2;
+  isVector = any(size(x) == 1);
+  if (isVector)
+    isRow = (size(x, 1) == 1);
+    xCols = x(:);
+  else
+    isRow = false;
+    xCols = x;
+  end
+  Lx = size(xCols, 1);
+
+  % Delay the output so decimation lands on the filter's centre tap.
+  nz = floor(q - mod(Lhalf, q));
+  h = [zeros(1, nz), h];
+  Lhalf = Lhalf + nz;
+  delay = floor(ceil(Lhalf) / q);
+
+  Ly = ceil(Lx * p / q);
+  nz1 = 0;
+  while (ceil(((Lx - 1) * p + numel(h) + nz1) / q) - delay < Ly)
+    nz1 = nz1 + 1;
+  end
+  hPadded = [h, zeros(1, nz1)];
+
+  numChannels = size(xCols, 2);
+  y = zeros(Ly, numChannels);
+  for c = 1:numChannels
+    if (p > 1)
+      upsampled = zeros(Lx * p, 1);
+      upsampled(1:p:end) = xCols(:, c);
+    else
+      upsampled = xCols(:, c);
+    end
+    filtered = filter(hPadded, 1, [upsampled; zeros(numel(hPadded), 1)]);
+    yc = filtered(1:q:end);
+    yc(1:delay) = [];
+    yc(Ly + 1:end) = [];
+    y(:, c) = yc;
+  end
+
+  if (isVector && isRow)
+    y = y.';
+  end
+end
