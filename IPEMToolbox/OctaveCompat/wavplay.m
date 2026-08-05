@@ -20,7 +20,15 @@ function wavplay(y, Fs, varargin)
     if exist('sound', 'builtin') || exist('sound', 'file')
       sound(y, Fs);
       if syncMode
-        pause(size(y, 1) / Fs + 0.05);
+        % MATLAB audio is usually samples-by-channels, but several IPEM
+        % helpers pass mono as a row vector (1xN). Use the sample count,
+        % not size(y,1), so 'sync' blocks for the full duration.
+        if (isvector(y))
+          nSamples = numel(y);
+        else
+          nSamples = size(y, 1);
+        end
+        pause(nSamples / Fs + 0.05);
       end
     else
       warning('wavplay: playback unavailable; skipping audio output');
