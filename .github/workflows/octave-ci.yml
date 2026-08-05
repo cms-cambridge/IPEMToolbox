@@ -1,0 +1,30 @@
+name: Octave CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  smoke:
+    name: Build MEX and smoke test (Octave 10.3)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build auditory-model MEX and run smoke test
+        run: |
+          docker run --rm \
+            -v "$PWD":/src \
+            -w /src \
+            gnuoctave/octave:10.3.0 \
+            bash -lc '
+              set -euo pipefail
+              octave-cli --eval "pkg install -forge control"
+              octave-cli --eval "pkg install -forge signal"
+              make -C AuditoryModel/Octave_UNIX
+              make -C AuditoryModel/Octave_UNIX install
+              octave-cli --no-gui --quiet --eval "run(\"tests/smoke_test_octave.m\")"
+            '

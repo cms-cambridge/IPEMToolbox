@@ -69,6 +69,8 @@ octave --no-gui --eval "IPEMSetup"
 octave --no-gui --eval "run('../tests/smoke_test_octave.m')"
 ```
 
+CI (GitHub Actions) builds the MEX inside `gnuoctave/octave:10.3.0` and runs that smoke test on every pull request to `master`.
+
 For the full Leman (2000) Docker/Python workflow, use [pyLeman2000](https://github.com/cms-cambridge/pyLeman2000).
 
 ## Citation
