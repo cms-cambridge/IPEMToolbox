@@ -11,6 +11,17 @@ IPEMProcessModel_external.cpp by Koen Tanghe
 *************************************************************************/
 #include "mex.h"
 
+/* Forward declarations from the auditory model C library. */
+void IPEMAuditoryModel_Setup(long inNumOfChannels,
+                             double inFirstFreq,
+                             double inFreqDist,
+                             const char* inInputFileName,
+                             const char* inInputFilePath,
+                             const char* inOutputFileName,
+                             const char* inOutputFilePath,
+                             double inSampleFrequency,
+                             long inSoundFileFormat);
+long IPEMAuditoryModel_Process(void);
 
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 {

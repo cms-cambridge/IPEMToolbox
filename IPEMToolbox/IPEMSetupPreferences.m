@@ -69,7 +69,12 @@ InitialPreferences = { ...
 
 % Ensure existence of directory holding preference file
 % (needed because of Matlab 6.0 bug; in 5.3 preferences where stored in the registry)
-prefdir(1);
+% Octave's prefdir does not accept the create-directory argument.
+if (exist('OCTAVE_VERSION', 'builtin') ~= 0)
+    prefdir();
+else
+    prefdir(1);
+end
 
 % Run through preferences and add if they don't exist
 for i = 1:size(InitialPreferences,1)

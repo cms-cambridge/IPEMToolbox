@@ -1,6 +1,7 @@
 # Compiled source #
 ###################
 *.o
+AuditoryModel/*/Release/
 
 #backup files
 *~
@@ -8,3 +9,7 @@
 #matlab data files
 *.ani
 *.dat
+
+# Octave / MATLAB mex binaries (built locally or in Docker)
+IPEMToolbox/Common/IPEMProcessAuditoryModelSafe.mex
+IPEMToolbox/Common/IPEMProcessAuditoryModelSafe.mex*
