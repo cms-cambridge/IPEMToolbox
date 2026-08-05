@@ -36,15 +36,21 @@ function IPEMSetup
 % !!! DON'T CHANGE ANYTHING TO THIS FILE !!!
 % ------------------------------------------
 
-% Paths to be added
-Paths = {'Common',...
-%        'Scripts',...
-        'Demos',...
-%        fullfile('Demos','Contextuality'),...
-%        fullfile('Demos','Roughness'),...
-%        fullfile('Demos','RoughnessApplications'),...
-        fullfile('Demos','MECPatternExtraction'),...
+% Paths to be added (column cell so size(Paths,1) iterates all entries)
+Paths = {
+    'Common';
+%   'Scripts';
+    'Demos';
+%   fullfile('Demos','Contextuality');
+%   fullfile('Demos','Roughness');
+%   fullfile('Demos','RoughnessApplications');
+    fullfile('Demos','MECPatternExtraction');
     };
+
+isOctave = exist('OCTAVE_VERSION', 'builtin') ~= 0;
+if (isOctave)
+    Paths = [{'OctaveCompat'}; Paths];
+end
 
 % ------------------------------------------------------------------------------
 % Check some requirements
@@ -57,42 +63,69 @@ Paths = {'Common',...
 %    return;
 %end
 
-% Check Matlab version
 MatlabVersion = '6.0';
-MatlabComp = IPEMCheckVersion('matlab',MatlabVersion);
-if (MatlabComp < 0)
-    disp('ERROR:');
-    disp(['Your Matlab version should be at least ' MatlabVersion]);
-    disp('IPEM Toolbox setup failed...');
-    return;
-elseif (MatlabComp > 0)
-    disp('WARNING:');
-    disp('Your Matlab version is higher than the one the IPEM Toolbox');
-    disp(['was developed with/for (which is ' MatlabVersion ').']);
-    disp('It could be expected that your Matlab version is backwards compatible');
-    disp('with version 6, but be aware of possible bugs.');
-end
-
-% Check Signal Processing Toolbox presence and version
-SignalVersion = '5.0';
-SignalComp = IPEMCheckVersion('signal',SignalVersion);
-if isempty(SignalComp)
-    disp('ERROR:');
-    disp('The Signal Processing Toolbox is not installed.');
-    disp('The IPEM Toolbox cannot work without it...');
-    disp('IPEM Toolbox setup failed...');
+if (isOctave)
+    disp('INFO:');
+    disp(['Running under GNU Octave ' OCTAVE_VERSION]);
+    disp('The IPEM Toolbox was originally developed for MATLAB.');
+    disp('Compatibility shims in OctaveCompat/ are enabled.');
 else
-    if (SignalComp < 0)
+    % Check Matlab version
+    MatlabComp = IPEMCheckVersion('matlab',MatlabVersion);
+    if (MatlabComp < 0)
         disp('ERROR:');
-        disp(['Your Signal Processing Toolbox version should be at least ' SignalVersion]);
+        disp(['Your Matlab version should be at least ' MatlabVersion]);
         disp('IPEM Toolbox setup failed...');
         return;
-    elseif (SignalComp > 0)
+    elseif (MatlabComp > 0)
         disp('WARNING:');
-        disp('Your Signal Processing Toolbox version is higher than the one the IPEM Toolbox');
-        disp(['was developed with/for (which is ' SignalVersion ').']);
-        disp('It could be expected that your Signal Processing Toolbox version is backwards compatible');
-        disp('with version 5, but be aware of possible bugs.');
+        disp('Your Matlab version is higher than the one the IPEM Toolbox');
+        disp(['was developed with/for (which is ' MatlabVersion ').']);
+        disp('It could be expected that your Matlab version is backwards compatible');
+        disp('with version 6, but be aware of possible bugs.');
+    end
+end
+
+% Check Signal Processing Toolbox / Octave signal package
+SignalVersion = '5.0';
+if (isOctave)
+    try
+        pkg('load', 'signal');
+    catch
+        disp('ERROR:');
+        disp('Could not load the Octave signal package.');
+        disp('Install it (e.g. apt install octave-signal) and retry.');
+        disp('IPEM Toolbox setup failed...');
+        return;
+    end
+    if (exist('butter') == 0)
+        disp('ERROR:');
+        disp('Octave signal package loaded, but butter() is unavailable.');
+        disp('IPEM Toolbox setup failed...');
+        return;
+    end
+    disp('INFO: Octave signal package loaded.');
+else
+    SignalComp = IPEMCheckVersion('signal',SignalVersion);
+    if isempty(SignalComp)
+        disp('ERROR:');
+        disp('The Signal Processing Toolbox is not installed.');
+        disp('The IPEM Toolbox cannot work without it...');
+        disp('IPEM Toolbox setup failed...');
+        return;
+    else
+        if (SignalComp < 0)
+            disp('ERROR:');
+            disp(['Your Signal Processing Toolbox version should be at least ' SignalVersion]);
+            disp('IPEM Toolbox setup failed...');
+            return;
+        elseif (SignalComp > 0)
+            disp('WARNING:');
+            disp('Your Signal Processing Toolbox version is higher than the one the IPEM Toolbox');
+            disp(['was developed with/for (which is ' SignalVersion ').']);
+            disp('It could be expected that your Signal Processing Toolbox version is backwards compatible');
+            disp('with version 5, but be aware of possible bugs.');
+        end
     end
 end
 
@@ -121,13 +154,7 @@ for i = 1:size(Paths,1)
     end
 end;
 
-isOctave = exist('OCTAVE_VERSION') ~= 0;
-if (isOctave)
-  disp('WARNING:');
-  disp('You are running Octave. The IPEM Toolbox ');
-  disp(['was developed with/for (which is ' MatlabVersion ').']);
-  disp('Be aware of possible compatibility problems.');
-else
+if (~isOctave)
   path2rc;
 end
 

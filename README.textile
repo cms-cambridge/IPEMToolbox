@@ -72,7 +72,21 @@ This assumes you already have a compiler and GNU Make installed on your system. 
 # Start your Matlab environment and navigate to the IPEMToolbox directory. Run IPEMSetup.m to setup the toolbox.
 # Test the install by running the demo @IPEMDemoMECRhythmExtraction@
 
-The steps to compile and use the toolbox in GNU Octave are very similar. Make sure the @mkoctfile@ command is available in your path before running make. On Debian this is found in the @octave-pkg-dev@ package.
+The steps to compile and use the toolbox in GNU Octave are very similar. Make sure the @mkoctfile@ command is available in your path before running make. On Debian/Ubuntu this is found in the @octave-dev@ package (older releases used @octave-pkg-dev@). You also need the Octave @signal@ package (e.g. @apt install octave-signal@, or @pkg install -forge signal@).
+
+
+h3. Docker (GNU Octave 10.3)
+
+A Dockerfile is provided for license-free containerized use via GNU Octave 10.3. It compiles the auditory model MEX inside the image and installs Octave Forge @signal@ (plus dependencies).
+
+bc. docker build -t ipem-toolbox:octave-10.3 .
+docker run --rm ipem-toolbox:octave-10.3
+
+The default command runs @tests/smoke_test_octave.m@. For an interactive Octave session:
+
+bc. docker run --rm -it ipem-toolbox:octave-10.3 octave --no-gui
+
+Compatibility helpers live in @IPEMToolbox/OctaveCompat@ (@wavread@/@wavwrite@/@wavplay@/@textread@ shims). The GUIDE-based @IPEMMECReSynthUI@ is not supported under Octave.
 
 
 h2. Credits
