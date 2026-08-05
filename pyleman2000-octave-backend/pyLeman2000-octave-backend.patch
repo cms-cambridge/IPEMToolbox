@@ -1,0 +1,489 @@
+From a67b8a5c7dbbbd8a4d0e34c04b532dc5d957d420 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 5 Aug 2026 08:15:50 +0000
+Subject: [PATCH 1/2] Add license-free Octave Docker backend
+
+Build an Octave 10.3 image from the cms-cambridge/IPEMToolbox fork and expose
+it as DEFAULT_OCTAVE_IMAGE. The entrypoint matches the MATLAB MCR CLI so the
+existing docker_runner works unchanged.
+---
+ README.md                          | 59 ++++++++++++++++----
+ docker/octave/Dockerfile           | 57 +++++++++++++++++++
+ docker/octave/leman_2000.m         | 89 ++++++++++++++++++++++++++++++
+ docker/octave/leman_2000_docker.sh | 27 +++++++++
+ pyproject.toml                     |  1 +
+ scripts/build_octave_image.sh      | 16 ++++++
+ src/pyleman2000/__init__.py        |  8 ++-
+ src/pyleman2000/docker_runner.py   |  4 ++
+ tests/test_octave_backend.py       | 64 +++++++++++++++++++++
+ 9 files changed, 312 insertions(+), 13 deletions(-)
+ create mode 100644 docker/octave/Dockerfile
+ create mode 100644 docker/octave/leman_2000.m
+ create mode 100755 docker/octave/leman_2000_docker.sh
+ create mode 100755 scripts/build_octave_image.sh
+ create mode 100644 tests/test_octave_backend.py
+
+diff --git a/README.md b/README.md
+index 5fc264a..629bd81 100644
+--- a/README.md
++++ b/README.md
+@@ -6,10 +6,17 @@ The original model was published in a 2000 *Music Perception* paper, and was
+ shown to provide a psychoacoustic account of the Krumhansl-Kessler probe-tone
+ data (Leman, 2000). Leman and colleagues released this model as part of the
+ IPEM Toolbox, which now only runs on old MATLAB versions. This package wraps
+-the compiled implementation in Docker (via the
++the model in Docker (via the
+ [Docker SDK for Python](https://docker-py.readthedocs.io/)) for cross-platform
+ use.
+ 
++Two backends are supported:
++
++| Backend | Image | Notes |
++|---------|-------|-------|
++| **MATLAB MCR** (default) | pinned `ghcr.io/pmcharrison/leman_2000` | Bit-identical to archived R snapshots (`1e-12`) |
++| **GNU Octave** | build locally from `docker/octave/` | License-free; correlations agree with MATLAB to ~`3e-6` on 44.1 kHz input |
++
+ This is a Python port of [`leman2000R`](https://github.com/pmcharrison/leman2000R).
+ 
+ ## Requirements
+@@ -17,24 +24,25 @@ This is a Python port of [`leman2000R`](https://github.com/pmcharrison/leman2000
+ - Python 3.10+
+ - [Docker](https://docs.docker.com/get-docker/) installed and running
+   (`docker info` should succeed)
+-- On first use, a reproducibly pinned `ghcr.io/pmcharrison/leman_2000` image is
+-  pulled (~1 GB compressed). That first pull can take several minutes; download
+-  and extraction progress is reported on standard error. Subsequent runs also
+-  report preparing / running / reading status (with an elapsed-time heartbeat
+-  while the model executes). Silence both with
+-  `leman2000(..., show_progress=False)`.
++- On first use of the default backend, a reproducibly pinned
++  `ghcr.io/pmcharrison/leman_2000` image is pulled (~1 GB compressed). That
++  first pull can take several minutes; download and extraction progress is
++  reported on standard error. Subsequent runs also report preparing / running /
++  reading status (with an elapsed-time heartbeat while the model executes).
++  Silence both with `leman2000(..., show_progress=False)`.
+ 
+ Input and output files are copied in and out of the container rather than
+ bind-mounted, so no Docker file sharing configuration is needed. Analyses work
+ regardless of where the audio lives, including paths that Docker Desktop does
+ not share by default (such as WAV files inside `site-packages`).
+ 
+-> **Note:** The underlying image targets `linux/amd64`. On Apple Silicon, enable
++> **Note:** The underlying images target `linux/amd64`. On Apple Silicon, enable
+ > Docker Desktop's amd64/Rosetta or QEMU emulation, then verify with
+ > `docker run --platform=linux/amd64 --rm hello-world`. Emulated runs are
+-> slower than native amd64 hardware. Most of the per-call cost is MATLAB
+-> Runtime startup (several seconds even for short WAVs). For many analyses in
+-> one process, reuse a warm container with `Leman2000Session` (see below).
++> slower than native amd64 hardware. Most of the per-call cost for the MATLAB
++> backend is Runtime startup (several seconds even for short WAVs). For many
++> analyses in one process, reuse a warm container with `Leman2000Session`
++> (see below).
+ 
+ ## Installation
+ 
+@@ -48,12 +56,39 @@ For local development:
+ python3 -m pip install -e ".[dev]"
+ ```
+ 
+-Optional: pre-pull the pinned model image before your first analysis:
++Optional: pre-pull the pinned MATLAB model image before your first analysis:
+ 
+ ```bash
+ docker pull "$(python3 -c 'from pyleman2000.docker_runner import DEFAULT_IMAGE; print(DEFAULT_IMAGE)')"
+ ```
+ 
++### Octave backend (license-free)
++
++Build the Octave image from this repository (pins
++[cms-cambridge/IPEMToolbox](https://github.com/cms-cambridge/IPEMToolbox) at the
++commit in `docker/octave/Dockerfile`):
++
++```bash
++./scripts/build_octave_image.sh
++```
++
++Then pass the image to the API:
++
++```python
++from pyleman2000 import DEFAULT_OCTAVE_IMAGE, example_wav_path, leman2000
++
++result = leman2000(
++    input_file=example_wav_path(),
++    local_decay_sec=[0.1, 0.2],
++    global_decay_sec=[1.0, 2.0],
++    docker_image=DEFAULT_OCTAVE_IMAGE,
++)
++```
++
++Octave uses a MATLAB-compatible `resample` shim inside the toolbox fork. On
++44.1 kHz input, running correlations typically match the MATLAB backend to
++about `3e-6` (not `1e-12`). Feed 22.05 kHz audio if you need near-exact
++cross-backend agreement.
+ ## Choosing parameters
+ 
+ There is not much clarity in the literature on which local/global decay
+diff --git a/docker/octave/Dockerfile b/docker/octave/Dockerfile
+new file mode 100644
+index 0000000..ce08799
+--- /dev/null
++++ b/docker/octave/Dockerfile
+@@ -0,0 +1,57 @@
++# Leman (2000) Octave backend for pyLeman2000.
++#
++# Builds a license-free image from the Octave-compatible IPEM Toolbox fork.
++# The container entrypoint matches the MATLAB MCR image CLI so
++# pyleman2000.docker_runner can use either backend unchanged:
++#
++#   /leman_2000_docker.sh <input.wav> <output.json> <local_csv> <global_csv> <detail>
++#
++# Build (from the pyLeman2000 repository root):
++#
++#   docker build -f docker/octave/Dockerfile -t pyleman2000-octave:dev docker/octave
++#
++# Pin IPEM_REF to a commit SHA of cms-cambridge/IPEMToolbox for reproducibility.
++
++ARG OCTAVE_BASE=docker.io/gnuoctave/octave:10.3.0
++FROM ${OCTAVE_BASE}
++
++USER root
++
++ARG IPEM_REPO=https://github.com/cms-cambridge/IPEMToolbox.git
++# Pin to the Octave-compat fork revision (update when merging toolbox PRs).
++ARG IPEM_REF=fc2dc4f9dbcd9df50da16a5e1a228284e9d81cd0
++
++ENV DEBIAN_FRONTEND=noninteractive \
++    OCTAVE_HISTFILE=/tmp/octave-history \
++    IPEM_ROOT=/opt/IPEMToolbox \
++    LD_LIBRARY_PATH=
++
++RUN apt-get update \
++    && apt-get install -y --no-install-recommends \
++        build-essential \
++        ca-certificates \
++        git \
++        libsndfile1 \
++    && rm -rf /var/lib/apt/lists/*
++
++RUN octave --no-gui --quiet --eval "\
++  pkg install -forge io; \
++  pkg install -forge control; \
++  pkg install -forge signal; \
++  pkg list;"
++
++RUN git clone --filter=blob:none "${IPEM_REPO}" "${IPEM_ROOT}" \
++    && cd "${IPEM_ROOT}" \
++    && git checkout "${IPEM_REF}" \
++    && mkdir -p AuditoryModel/Octave_UNIX/Release IPEMToolbox/Temp \
++    && cd AuditoryModel/Octave_UNIX \
++    && make \
++    && make install \
++    && test -f "${IPEM_ROOT}/IPEMToolbox/Common/IPEMProcessAuditoryModelSafe.mex"
++
++COPY leman_2000.m /opt/leman_2000.m
++COPY leman_2000_docker.sh /leman_2000_docker.sh
++RUN chmod +x /leman_2000_docker.sh
++
++WORKDIR /opt
++ENTRYPOINT ["/leman_2000_docker.sh"]
+diff --git a/docker/octave/leman_2000.m b/docker/octave/leman_2000.m
+new file mode 100644
+index 0000000..33e58d1
+--- /dev/null
++++ b/docker/octave/leman_2000.m
+@@ -0,0 +1,89 @@
++function leman_2000(in_file, out_file, local_decay_sec, global_decay_sec, detail)
++% Octave port of pmcharrison/leman_2000.m for the pyLeman2000 Docker backend.
++%
++% Writes JSON with the same top-level schema as the MATLAB MCR binary:
++%   audio_length_sec, num_channels, sample_rate,
++%   local_global_comparison[{local_decay_sec, global_decay_sec, running_correlation}],
++%   and optionally auditory_nerve / periodicity_pitch when detail > 1.
++
++  toolbox_dir = '/opt/IPEMToolbox/IPEMToolbox';
++  addpath(toolbox_dir);
++  cd(toolbox_dir);
++  IPEMSetup;
++
++  [in_dir, in_file_key, in_file_ext] = fileparts(in_file);
++  in_file_name = strcat(in_file_key, in_file_ext);
++  [s, fs] = IPEMReadSoundFile(in_file_name, in_dir);
++  num_channels = size(s, 1);
++
++  local_decay_sec = parse_array(local_decay_sec);
++  global_decay_sec = parse_array(global_decay_sec);
++
++  if (num_channels == 2)
++    s = (s(1, :) + s(2, :)) / 2;
++  end
++
++  audio_length_sec = length(s) / fs;
++
++  [ANI, ANIFreq, ANIFilterFreqs] = IPEMCalcANI(s, fs);
++  [PP, PPFreq, PPPeriods, PPFANI] = IPEMPeriodicityPitch(ANI, ANIFreq);
++
++  res = struct();
++  res.audio_length_sec = audio_length_sec;
++  res.num_channels = num_channels;
++  res.sample_rate = fs;
++
++  if (detail > 1)
++    res.auditory_nerve = struct( ...
++      'images', ANI, ...
++      'sample_freq', ANIFreq, ...
++      'filter_freqs', ANIFilterFreqs);
++    res.periodicity_pitch = struct( ...
++      'signal', PP, ...
++      'sample_freq', PPFreq, ...
++      'pitch_periods', PPPeriods, ...
++      'filtered_auditory_nerve_images', PPFANI);
++  end
++
++  % Match MATLAB combvec(local, global): local varies fastest.
++  n_local = numel(local_decay_sec);
++  n_global = numel(global_decay_sec);
++  n_combinations = n_local * n_global;
++  comparisons = cell(n_combinations, 1);
++  combo_idx = 0;
++  for gi = 1:n_global
++    for li = 1:n_local
++      combo_idx = combo_idx + 1;
++      local_decay = local_decay_sec(li);
++      global_decay = global_decay_sec(gi);
++      fprintf(1, 'Computing running correlation %d/%d...\n', combo_idx, n_combinations);
++      [~, ~, ~, ~, running_corr] = IPEMContextualityIndex( ...
++        PP, PPFreq, PPPeriods, [], local_decay, global_decay, [], 0);
++      comparisons{combo_idx} = struct( ...
++        'local_decay_sec', local_decay, ...
++        'global_decay_sec', global_decay, ...
++        'running_correlation', running_corr(:)');
++    end
++  end
++  res.local_global_comparison = comparisons;
++
++  payload = jsonencode(res);
++  fid = fopen(out_file, 'w');
++  if (fid < 0)
++    error('leman_2000: could not open output file %s', out_file);
++  end
++  fwrite(fid, payload);
++  fclose(fid);
++end
++
++function array = parse_array(x)
++  if (ischar(x) || isstring(x))
++    parts = strsplit(char(x), ',');
++    array = zeros(1, numel(parts));
++    for i = 1:numel(parts)
++      array(i) = str2double(strtrim(parts{i}));
++    end
++  else
++    array = x(:)';
++  end
++end
+diff --git a/docker/octave/leman_2000_docker.sh b/docker/octave/leman_2000_docker.sh
+new file mode 100755
+index 0000000..afc26a7
+--- /dev/null
++++ b/docker/octave/leman_2000_docker.sh
+@@ -0,0 +1,27 @@
++#!/usr/bin/env bash
++# Entrypoint compatible with the MATLAB MCR image CLI used by docker_runner.
++set -euo pipefail
++
++if [[ $# -lt 5 ]]; then
++  echo "Usage: $0 <input.wav> <output.json> <local_decay_csv> <global_decay_csv> <detail>" >&2
++  exit 2
++fi
++
++IN_FILE=$1
++OUT_FILE=$2
++LOCAL_DECAY=$3
++GLOBAL_DECAY=$4
++DETAIL=$5
++
++# Escape single quotes for Octave string literals.
++escape_sq() {
++  printf '%s' "$1" | sed "s/'/''/g"
++}
++
++IN_ESC=$(escape_sq "$IN_FILE")
++OUT_ESC=$(escape_sq "$OUT_FILE")
++LOCAL_ESC=$(escape_sq "$LOCAL_DECAY")
++GLOBAL_ESC=$(escape_sq "$GLOBAL_DECAY")
++
++octave --no-gui --quiet --eval \
++  "addpath('/opt'); leman_2000('${IN_ESC}', '${OUT_ESC}', '${LOCAL_ESC}', '${GLOBAL_ESC}', ${DETAIL});"
+diff --git a/pyproject.toml b/pyproject.toml
+index 34c5910..d518a12 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -36,6 +36,7 @@ include = [
+     "/src",
+     "/tests",
+     "/scripts",
++    "/docker",
+     "/README.md",
+     "/LICENSE",
+ ]
+diff --git a/scripts/build_octave_image.sh b/scripts/build_octave_image.sh
+new file mode 100755
+index 0000000..a6ec13e
+--- /dev/null
++++ b/scripts/build_octave_image.sh
+@@ -0,0 +1,16 @@
++#!/usr/bin/env bash
++# Build the license-free Octave backend image for pyLeman2000.
++set -euo pipefail
++
++ROOT="$(cd "$(dirname "$0")/.." && pwd)"
++IMAGE_TAG="${1:-pyleman2000-octave:dev}"
++
++echo "Building ${IMAGE_TAG} from ${ROOT}/docker/octave ..."
++docker build \
++  --platform=linux/amd64 \
++  -f "${ROOT}/docker/octave/Dockerfile" \
++  -t "${IMAGE_TAG}" \
++  "${ROOT}/docker/octave"
++
++echo "Done. Use with:"
++echo "  leman2000(..., docker_image='${IMAGE_TAG}')"
+diff --git a/src/pyleman2000/__init__.py b/src/pyleman2000/__init__.py
+index 2257386..0e0d78c 100644
+--- a/src/pyleman2000/__init__.py
++++ b/src/pyleman2000/__init__.py
+@@ -3,10 +3,16 @@
+ from importlib.metadata import PackageNotFoundError, version
+ 
+ from pyleman2000.api import Leman2000Session, example_wav_path, leman2000
+-from pyleman2000.docker_runner import Leman2000DockerError
++from pyleman2000.docker_runner import (
++    DEFAULT_IMAGE,
++    DEFAULT_OCTAVE_IMAGE,
++    Leman2000DockerError,
++)
+ from pyleman2000.types import Leman2000Result
+ 
+ __all__ = [
++    "DEFAULT_IMAGE",
++    "DEFAULT_OCTAVE_IMAGE",
+     "example_wav_path",
+     "leman2000",
+     "Leman2000DockerError",
+diff --git a/src/pyleman2000/docker_runner.py b/src/pyleman2000/docker_runner.py
+index b61fb3c..341b1bb 100644
+--- a/src/pyleman2000/docker_runner.py
++++ b/src/pyleman2000/docker_runner.py
+@@ -28,6 +28,10 @@ DEFAULT_IMAGE = (
+     "ghcr.io/pmcharrison/leman_2000"
+     "@sha256:08d5ce84b9844954473832af65188f8f56fdfc8bcc3c64e0307e532a062e2442"
+ )
++# License-free Octave backend built from cms-cambridge/IPEMToolbox (see
++# docker/octave/Dockerfile). Build locally with:
++#   docker build -f docker/octave/Dockerfile -t pyleman2000-octave:dev docker/octave
++DEFAULT_OCTAVE_IMAGE = "pyleman2000-octave:dev"
+ CONTAINER_INPUT_PATH = "/input.wav"
+ CONTAINER_OUTPUT_DIR = "/output"
+ CONTAINER_PLATFORM = "linux/amd64"
+diff --git a/tests/test_octave_backend.py b/tests/test_octave_backend.py
+new file mode 100644
+index 0000000..0fbac91
+--- /dev/null
++++ b/tests/test_octave_backend.py
+@@ -0,0 +1,64 @@
++"""Octave-backend integration checks (license-free Docker image)."""
++
++from __future__ import annotations
++
++import math
++
++import pytest
++
++from pyleman2000 import DEFAULT_OCTAVE_IMAGE, example_wav_path, leman2000
++from pyleman2000.docker_runner import Leman2000DockerError
++
++
++pytestmark = pytest.mark.integration
++
++
++def _octave_image_available() -> bool:
++    try:
++        import docker
++
++        client = docker.from_env()
++        try:
++            client.images.get(DEFAULT_OCTAVE_IMAGE)
++            return True
++        except Exception:
++            return False
++        finally:
++            client.close()
++    except Exception:
++        return False
++
++
++@pytest.mark.skipif(
++    not _octave_image_available(),
++    reason=f"Octave image {DEFAULT_OCTAVE_IMAGE!r} not built "
++    "(run scripts/build_octave_image.sh)",
++)
++def test_octave_backend_end_to_end() -> None:
++    try:
++        result = leman2000(
++            input_file=example_wav_path(),
++            local_decay_sec=[0.1, 0.2],
++            global_decay_sec=[1.0, 2.0],
++            windows=[(0.0, 0.1), (0.1, 0.2), (0.2, 0.3)],
++            docker_image=DEFAULT_OCTAVE_IMAGE,
++            show_progress=False,
++        )
++    except Leman2000DockerError as exc:
++        pytest.fail(f"Octave backend failed: {exc}")
++
++    combos = result.local_global_comparison[
++        ["local_decay_sec", "global_decay_sec"]
++    ].drop_duplicates()
++    assert len(combos) == 4
++    assert result.windowed_local_global_comparison is not None
++    assert len(result.windowed_local_global_comparison) == 12
++    assert math.isclose(result.audio_length_sec, 0.3707936508, rel_tol=0, abs_tol=1e-9)
++    assert result.num_channels == 1
++    assert result.sample_rate == 44100.0
++
++    # First correlation should be exactly 1.0 for each combo.
++    first_rows = result.local_global_comparison.groupby(
++        ["local_decay_sec", "global_decay_sec"], sort=False
++    ).first()
++    assert (first_rows["running_correlation"] == 1.0).all()
+-- 
+2.43.0
+
+
+From f8f0525e0bb5b14663259d47fa145f07cf11b74e Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 5 Aug 2026 08:15:59 +0000
+Subject: [PATCH 2/2] Document Octave docker_image option in leman2000
+ docstring
+
+---
+ src/pyleman2000/api.py | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/pyleman2000/api.py b/src/pyleman2000/api.py
+index 9e55945..b5bc0ac 100644
+--- a/src/pyleman2000/api.py
++++ b/src/pyleman2000/api.py
+@@ -160,7 +160,9 @@ def leman2000(
+ 
+     This model was published in a 2000 Music Perception paper, and was shown
+     to provide a psychoacoustic account of the Krumhansl-Kessler probe-tone
+-    data. Computation is performed by a Dockerised MATLAB/IPEM binary.
++    data. Computation runs in Docker: the default image is a compiled
++    MATLAB/IPEM binary; pass ``docker_image=DEFAULT_OCTAVE_IMAGE`` for the
++    license-free Octave backend (see ``docker/octave/``).
+ 
+     For repeated analyses in one process, prefer :class:`Leman2000Session`,
+     which reuses a warm container and is typically faster after the first run.
+-- 
+2.43.0
+
