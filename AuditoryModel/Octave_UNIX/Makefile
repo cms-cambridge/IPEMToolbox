@@ -14,11 +14,15 @@ GCC=gcc
 INCLUDE= -I../src -I../src/library -I../src/audiprog
 OBJS = $(OBJDIR)/Audimod.o $(OBJDIR)/AudiProg.o $(OBJDIR)/command.o $(OBJDIR)/cpu.o $(OBJDIR)/cpupitch.o $(OBJDIR)/decimation.o $(OBJDIR)/ecebank.o $(OBJDIR)/filenames.o $(OBJDIR)/filterbank.o $(OBJDIR)/Hcmbank.o $(OBJDIR)/IPEMAuditoryModel.o $(OBJDIR)/pario.o $(OBJDIR)/sigio.o
 
+.PHONY: all clean install
+
+# Compile object files and create the Octave mex binary
+all: $(OBJDIR)/IPEMProcessAuditoryModelSafe.mex
+
 $(OBJDIR):
 	mkdir -p $(OBJDIR)
 
-#compile the objects file and creates a mex file
-all: $(OBJDIR)
+$(OBJDIR)/IPEMProcessAuditoryModelSafe.mex: IPEMProcessAuditoryModelSafe.c | $(OBJDIR)
 	$(GCC) -c $(INCLUDE) $(GCCFLAGS) ../src/audiprog/Audimod.c    -o $(OBJDIR)/Audimod.o
 	$(GCC) -c $(INCLUDE) $(GCCFLAGS) ../src/audiprog/AudiProg.c   -o $(OBJDIR)/AudiProg.o
 	$(GCC) -c $(INCLUDE) $(GCCFLAGS) ../src/library/command.c     -o $(OBJDIR)/command.o
@@ -33,12 +37,12 @@ all: $(OBJDIR)
 	$(GCC) -c $(INCLUDE) $(GCCFLAGS) ../src/library/pario.c       -o $(OBJDIR)/pario.o
 	$(GCC) -c $(INCLUDE) $(GCCFLAGS) ../src/library/sigio.c       -o $(OBJDIR)/sigio.o
 	mkoctfile --mex $(INCLUDE) IPEMProcessAuditoryModelSafe.c $(OBJS) --output $(OBJDIR)/IPEMProcessAuditoryModelSafe.mex
-	
+	test -f $(OBJDIR)/IPEMProcessAuditoryModelSafe.mex
 
 clean:
 	rm -f $(OBJDIR)/*.o
 	rm -f $(OBJDIR)/*.mex
 
-install:
+install: $(OBJDIR)/IPEMProcessAuditoryModelSafe.mex
 	cp $(OBJDIR)/IPEMProcessAuditoryModelSafe.mex ../../IPEMToolbox/Common
 	cp IPEMProcessAuditoryModel.m ../../IPEMToolbox/Common

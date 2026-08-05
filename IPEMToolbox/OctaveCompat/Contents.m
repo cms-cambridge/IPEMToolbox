@@ -6,4 +6,5 @@
 %   wavplay   - Headless-friendly playback stub
 %   auread    - MATLAB auread API via audioread
 %   auwrite   - MATLAB auwrite API via audiowrite
-%   textread  - Minimal textread for ANI file loading
+%
+% Note: Octave 10 provides textread natively; no shim is needed.
