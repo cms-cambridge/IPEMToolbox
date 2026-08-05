@@ -1,0 +1,16 @@
+{
+  "p": 1,
+  "q": 4,
+  "N": 10,
+  "beta": 5.0,
+  "x_shape": [
+    200,
+    4
+  ],
+  "y_shape": [
+    50,
+    4
+  ],
+  "h_len": 85,
+  "note": "Reference from independent Python reimplementation of MATLAB resample"
+}
