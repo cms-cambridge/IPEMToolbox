@@ -1,0 +1,9 @@
+.git
+*.pdf
+Manual/
+Docs/
+**/Release/
+*.o
+*~
+IPEMToolbox/Temp/*
+!IPEMToolbox/Temp/CleanUpGarbageInThisDirectory.bat
