@@ -100,14 +100,9 @@ outToneCenters = IPEMLeakyIntegration(inPeriodicityPitch,inSampleFreq,inHalfDeca
 outContextuality1 = [];
 outContextuality2 = [];
 outContextuality3 = [];
-% Save/restore warning state. MATLAB's [ws,wf]=warning returns two outputs;
-% Octave's warning() returns one.
-isOctave = exist('OCTAVE_VERSION', 'builtin') ~= 0;
-if (isOctave)
-    ws = warning('query');
-else
-    [ws,wf] = warning; %#ok<ASGLU>
-end
+% Save/restore warning state. Use warning('query') on both MATLAB and Octave:
+% modern MATLAB no longer accepts the obsolete second frequency output of warning.
+ws = warning('query');
 warning('off');
 for i = 1:size(outToneCenters,2)
     value1 = corrcoef(outChords(:,i),outChords(:,inSnapShotSamples));
@@ -117,11 +112,7 @@ for i = 1:size(outToneCenters,2)
     outContextuality2 = [outContextuality2 value2(1,2)];
     outContextuality3 = [outContextuality3 value3(1,2)];
 end
-if (isOctave)
-    warning(ws);
-else
-    warning(ws); warning(wf);
-end
+warning(ws);
 
 % Generate figures if needed
 if (inPlotFlag)
