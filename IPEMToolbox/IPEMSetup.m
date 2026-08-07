@@ -154,7 +154,7 @@ for i = 1:size(Paths,1)
     end
 end;
 
-if (~isOctave)
+if (~isOctave && ~isdeployed)
   path2rc;
 end
 
